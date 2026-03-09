@@ -6,13 +6,19 @@ import plotly.graph_objects as go
 # 1. PAGE SETUP
 st.set_page_config(page_title="Global Supermarket Intelligence", layout="wide", page_icon="📊")
 
-# Custom CSS for a professional look
+# Custom CSS for a professional look (Fixed the parameter name here)
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    [data-testid="stMetricValue"] { font-size: 28px; }
+    .stMetric { 
+        background-color: #ffffff; 
+        padding: 15px; 
+        border-radius: 10px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    }
     </style>
-    """, unsafe_index=True)
+    """, unsafe_allow_html=True)
 
 # 2. DATA ENGINE
 @st.cache_data
@@ -34,8 +40,7 @@ try:
     df = load_and_clean_data()
 
     # 3. GLOBAL SIDEBAR FILTERS
-    st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3081/3081840.png", width=100)
-    st.sidebar.title("Data Filters")
+    st.sidebar.title("🕹️ Control Panel")
     
     city = st.sidebar.multiselect("📍 Select Cities", options=df["City"].unique(), default=df["City"].unique())
     customer_type = st.sidebar.multiselect("👥 Customer Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
@@ -58,15 +63,16 @@ try:
         st.error("No data found! Adjust your sidebar filters.")
     else:
         # 5. KPI SUMMARY ROW
+        # Explicitly selecting numeric columns before sum to avoid Errors
         total_sales = df_selection["Sales"].sum()
         total_profit = df_selection["gross income"].sum()
         avg_rating = round(df_selection["Rating"].mean(), 1)
         total_units = df_selection["Quantity"].sum()
 
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("Total Revenue", f"${total_sales:,.0f}", delta="Annual Target")
-        kpi2.metric("Gross Profit", f"${total_profit:,.2f}", delta="4.76% Margin")
-        kpi3.metric("Avg Satisfaction", f"{avg_rating} / 10", delta="CSAT Score")
+        kpi1.metric("Total Revenue", f"${total_sales:,.0f}")
+        kpi2.metric("Gross Profit", f"${total_profit:,.2f}")
+        kpi3.metric("Avg Satisfaction", f"{avg_rating} / 10")
         kpi4.metric("Units Sold", f"{total_units:,} pcs")
 
         st.markdown("---")
@@ -114,6 +120,7 @@ try:
 
         with tab4:
             st.subheader("Filtered Transactional Records")
+            # Drop the helper datetime columns before showing table
             st.dataframe(df_selection.drop(columns=["Time_dt", "Hour", "Month"]), use_container_width=True)
 
 except Exception as e:

@@ -9,7 +9,7 @@ st.set_page_config(page_title="Supermarket Analytics Dashboard", layout="wide", 
 # 2. LOAD DATA
 @st.cache_data
 def get_data():
-    df = pd.read_csv("SuperMarket_Analysis.csv")
+    df = pd.read_csv("SuperMarket Analysis.csv")
     # Convert Date to datetime object
     df["Date"] = pd.to_datetime(df["Date"])
     # Create an Hour column for time analysis
@@ -120,4 +120,5 @@ try:
 
 except Exception as e:
     st.error(f"Waiting for data... Please ensure 'SuperMarket_Analysis.csv' is uploaded. Error: {e}")
+
 

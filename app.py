@@ -9,10 +9,14 @@ st.set_page_config(page_title="Supermarket Analytics Dashboard", layout="wide", 
 @st.cache_data
 def get_data():
     df = pd.read_csv("SuperMarket Analysis.csv")
+    
     # Convert Date to datetime object
-    df["Date"] = pd.to_datetime(df["Date"])
-    # Create an Hour column safely
-    df["Hour"] = pd.to_datetime(df["Time"], format='%H:%M:%S').dt.hour if df["Time"].dtype == 'O' else pd.to_datetime(df["Time"]).dt.hour
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce')
+    
+    # Robust Time parsing: automatically handles "1:08:00 PM" or "13:08:00"
+    df["Time_dt"] = pd.to_datetime(df["Time"], errors='coerce')
+    df["Hour"] = df["Time_dt"].dt.hour
+    
     return df
 
 try:
@@ -58,7 +62,7 @@ try:
         # 6. VISUALIZATIONS
         row1_col1, row1_col2 = st.columns(2)
 
-        # FIXED CHART A: Select only numeric column ['Sales'] before summing
+        # Sales by Product Line
         sales_by_product = (
             df_selection.groupby(by=["Product line"])[["Sales"]].sum().sort_values(by="Sales")
         )
@@ -73,13 +77,13 @@ try:
         )
         row1_col1.plotly_chart(fig_product_sales, use_container_width=True)
 
-        # FIXED CHART B: Select only numeric column ['Sales'] before summing
+        # Sales by Hour
         sales_by_hour = df_selection.groupby(by=["Hour"])[["Sales"]].sum()
         fig_hourly_sales = px.area(
             sales_by_hour,
             x=sales_by_hour.index,
             y="Sales",
-            title="<b>Peak Sales Hours</b>",
+            title="<b>Peak Sales Hours (24h format)</b>",
             color_discrete_sequence=["#FFA500"],
             template="plotly_white",
         )
@@ -87,14 +91,14 @@ try:
 
         row2_col1, row2_col2, row2_col3 = st.columns(3)
 
-        # CHART C: Payment Method Distribution
+        # Payment Method Distribution
         fig_payment = px.pie(
             df_selection, values="Sales", names="Payment", 
             title="<b>Payment Methods</b>", hole=.3
         )
         row2_col1.plotly_chart(fig_payment, use_container_width=True)
 
-        # FIXED CHART D: Revenue by City
+        # Revenue by City
         sales_by_city = df_selection.groupby(by=["City"])[["Sales"]].sum()
         fig_city = px.bar(
             sales_by_city, x=sales_by_city.index, y="Sales",
@@ -104,7 +108,7 @@ try:
         )
         row2_col2.plotly_chart(fig_city, use_container_width=True)
 
-        # CHART E: Avg Rating by Product Line
+        # Avg Rating by Product Line
         rating_by_product = df_selection.groupby(by=["Product line"])[["Rating"]].mean()
         fig_rating = px.scatter(
             rating_by_product, x=rating_by_product.index, y="Rating",
@@ -116,9 +120,7 @@ try:
 
         # 7. DATA TABLE VIEW
         with st.expander("👀 View Filtered Dataset"):
-            st.dataframe(df_selection)
+            st.dataframe(df_selection.drop(columns=['Time_dt']))
 
 except Exception as e:
     st.error(f"Waiting for data... Please ensure 'SuperMarket_Analysis.csv' is uploaded. Error: {e}")
-
-

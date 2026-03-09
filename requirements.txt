@@ -1,3 +1,14 @@
-streamlit 
-plotly 
+# Web Framework
+streamlit
+
+# Data Manipulation
 pandas
+numpy
+
+# Visualization
+plotly
+matplotlib
+seaborn
+
+# Machine Learning (for Forecasting)
+scikit-learn

@@ -1,131 +1,153 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
 from sklearn.linear_model import LinearRegression
 import datetime
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="Executive Supermarket Dashboard", layout="wide", page_icon="📊")
+st.set_page_config(page_title="30-Day Sales Forecasting Dashboard", layout="wide", page_icon="🔮")
 
-# Custom CSS for UI styling
+# Custom CSS for modern look
 st.markdown("""
     <style>
-    .main { background-color: #f0f2f6; }
-    [data-testid="stMetricValue"] { font-size: 30px; color: #0083B8; }
+    .main { background-color: #f8f9fa; }
+    [data-testid="stMetricValue"] { font-size: 32px; color: #1E88E5; font-weight: bold; }
     .stMetric { 
         background-color: #ffffff; 
-        padding: 20px; 
-        border-radius: 12px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        padding: 15px; 
+        border-radius: 10px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
     }
-    h2 { color: #1f3b4d; border-bottom: 2px solid #0083B8; padding-bottom: 10px; }
+    h1, h2, h3 { color: #0D47A1; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA ENGINE
+# 2. DATA LOADING & PREPROCESSING
 @st.cache_data
 def load_data():
     df = pd.read_csv("SuperMarket Analysis.csv")
     df["Date"] = pd.to_datetime(df["Date"])
-    # Parsing Time format (e.g., 1:08:00 PM)
-    df["Time_dt"] = pd.to_datetime(df["Time"], format='%I:%M:%S %p', errors='coerce')
-    df["Hour"] = df["Time_dt"].dt.hour
-    df["Day"] = df["Date"].dt.day_name()
     return df
 
 try:
     df = load_data()
 
-    # 3. SIDEBAR FILTERS
-    st.sidebar.title("🔍 Global Filters")
-    city_list = st.sidebar.multiselect("Select City", options=df["City"].unique(), default=df["City"].unique())
-    ctype_list = st.sidebar.multiselect("Customer Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
-    branch_list = st.sidebar.multiselect("Branch", options=df["Branch"].unique(), default=df["Branch"].unique())
-    gender_list = st.sidebar.multiselect("Gender", options=df["Gender"].unique(), default=df["Gender"].unique())
+    # 3. GLOBAL FILTERS
+    st.sidebar.title("🛠️ Forecasting Controls")
+    st.sidebar.info("This dashboard uses Linear Regression to predict trends based on historical data.")
+    
+    # Filter by Branch/Customer Type for specific context
+    branch_filter = st.sidebar.multiselect("Select Branch (Optional)", options=df["Branch"].unique(), default=df["Branch"].unique())
+    df_filtered = df[df["Branch"].isin(branch_filter)]
 
-    # --- THE FIX: BOOLEAN INDEXING ---
-    # We replace .query() with standard filtering to avoid keyword errors with "type"
-    mask = (
-        df["City"].isin(city_list) & 
-        df["Customer type"].isin(ctype_list) & 
-        df["Branch"].isin(branch_list) & 
-        df["Gender"].isin(gender_list)
-    )
-    df_selection = df[mask]
+    # 4. FORECASTING ENGINE
+    # We define a function to predict future values for any specific grouping
+    def get_forecast(dataframe, group_col=None, forecast_days=30):
+        # Aggregate daily sales
+        if group_col:
+            daily_data = dataframe.groupby(['Date', group_col])['Sales'].sum().reset_index()
+            unique_items = daily_data[group_col].unique()
+        else:
+            daily_data = dataframe.groupby('Date')['Sales'].sum().reset_index()
+            unique_items = [None]
 
-    # 4. DASHBOARD TABS
-    st.title("🛒 Supermarket Business Intelligence")
-    tab1, tab2, tab3 = st.tabs(["📊 Performance Overview", "📈 Trends & Forecasting", "🧾 Tax & Detailed Data"])
+        last_date = daily_data['Date'].max()
+        future_dates = pd.date_range(start=last_date + datetime.timedelta(days=1), periods=forecast_days)
+        future_ords = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
+        
+        forecast_results = []
 
-    if not df_selection.empty:
-        # --- TAB 1: OVERVIEW ---
-        with tab1:
-            total_sales = df_selection["Sales"].sum()
-            total_profit = df_selection["gross income"].sum()
-            avg_rating = round(df_selection["Rating"].mean(), 1)
-            total_qty = df_selection["Quantity"].sum()
-
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("Total Revenue", f"${total_sales:,.0f}")
-            kpi2.metric("Gross Profit", f"${total_profit:,.2f}")
-            kpi3.metric("Total Units Sold", f"{total_qty:,}")
-            kpi4.metric("Avg Satisfaction", f"{avg_rating} / 10")
-
-            st.markdown("---")
+        for item in unique_items:
+            if item:
+                subset = daily_data[daily_data[group_col] == item]
+            else:
+                subset = daily_data
             
-            col1, col2 = st.columns(2)
-            with col1:
-                product_sales = df_selection.groupby("Product line")[["Sales"]].sum().sort_values("Sales")
-                fig_prod = px.bar(product_sales, x="Sales", y=product_sales.index, orientation='h', title="Top Product Categories", color="Sales", color_continuous_scale="Blues")
-                st.plotly_chart(fig_prod, use_container_width=True)
-            with col2:
-                city_rev = df_selection.groupby("City")[["Sales"]].sum().reset_index()
-                fig_city = px.pie(city_rev, values="Sales", names="City", hole=0.5, title="Revenue by City")
-                st.plotly_chart(fig_city, use_container_width=True)
-
-        # --- TAB 2: TRENDS & FORECASTING ---
-        with tab2:
-            st.subheader("Time Series & 30-Day Forecast")
-            daily_sales = df_selection.groupby("Date")["Sales"].sum().reset_index()
-            fig_trend = px.line(daily_sales, x="Date", y="Sales", title="Daily Revenue Trend")
-            st.plotly_chart(fig_trend, use_container_width=True)
+            # Prepare X and y
+            subset['Date_Ord'] = subset['Date'].map(datetime.datetime.toordinal)
+            X = subset[['Date_Ord']]
+            y = subset['Sales']
             
-            # Forecast Logic
-            daily_sales['Date_Ord'] = daily_sales['Date'].map(datetime.datetime.toordinal)
-            X = daily_sales[['Date_Ord']]
-            y = daily_sales['Sales']
-            model = LinearRegression().fit(X, y)
-            
-            last_date = daily_sales['Date'].max()
-            future_dates = pd.date_range(start=last_date + datetime.timedelta(days=1), periods=30)
-            future_ords = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
-            preds = model.predict(future_ords)
-            
-            fig_fore = go.Figure()
-            fig_fore.add_trace(go.Scatter(x=daily_sales['Date'], y=daily_sales['Sales'], name='Actual'))
-            fig_fore.add_trace(go.Scatter(x=future_dates, y=preds, name='Forecast', line=dict(dash='dash', color='red')))
-            st.plotly_chart(fig_fore, use_container_width=True)
+            if len(X) > 1: # Need at least 2 points to draw a line
+                model = LinearRegression().fit(X, y)
+                preds = model.predict(future_ords)
+                # Clip negative values to 0 (sales can't be negative)
+                preds = np.maximum(preds, 0)
+                
+                temp_df = pd.DataFrame({'Date': future_dates, 'Forecasted_Sales': preds})
+                if item:
+                    temp_df[group_col] = item
+                forecast_results.append(temp_df)
+        
+        return pd.concat(forecast_results) if forecast_results else pd.DataFrame()
 
-        # --- TAB 3: TAX & DATA ---
-        with tab3:
-            st.subheader("Tax Analysis (5%)")
-            tax_col1, tax_col2 = st.columns(2)
-            with tax_col1:
-                tax_by_pay = df_selection.groupby("Payment")[["Tax 5%"]].sum().reset_index()
-                st.plotly_chart(px.bar(tax_by_pay, x="Payment", y="Tax 5%", title="Tax by Payment Method"), use_container_width=True)
-            with tax_col2:
-                tax_by_gen = df_selection.groupby("Gender")[["Tax 5%"]].sum().reset_index()
-                st.plotly_chart(px.pie(tax_by_gen, values="Tax 5%", names="Gender", title="Tax by Gender"), use_container_width=True)
-            
-            with st.expander("📝 View Detailed Transaction Log"):
-                # Clean up display columns
-                display_df = df_selection.drop(columns=["Time_dt", "Hour", "Day"])
-                st.dataframe(display_df)
+    # Generate Forecasts
+    total_forecast = get_forecast(df_filtered)
+    city_forecast = get_forecast(df_filtered, group_col="City")
+    product_forecast = get_forecast(df_filtered, group_col="Product line")
 
-    else:
-        st.warning("Please adjust filters to view data.")
+    # 5. DASHBOARD LAYOUT
+    st.title("🔮 30-Day Sales Forecasting Dashboard")
+    st.markdown("Predictive analytics for inventory and revenue planning.")
 
+    # --- ROW 1: KEY METRICS ---
+    col_m1, col_m2, col_m3 = st.columns(3)
+    
+    total_predicted_revenue = total_forecast['Forecasted_Sales'].sum()
+    top_city = city_forecast.groupby("City")["Forecasted_Sales"].sum().idxmax()
+    top_prod = product_forecast.groupby("Product line")["Forecasted_Sales"].sum().idxmax()
+
+    col_m1.metric("Total Predicted Revenue (30 Days)", f"${total_predicted_revenue:,.2f}")
+    col_m2.metric("Top Predicted City", top_city)
+    col_m3.metric("Top Predicted Product Category", top_prod)
+
+    st.markdown("---")
+
+    # --- ROW 2: TIME SERIES FORECAST ---
+    st.subheader("📈 Time Series for 30-Day Forecast")
+    
+    historical_total = df_filtered.groupby("Date")["Sales"].sum().reset_index()
+    
+    fig_ts = go.Figure()
+    # Historical Line
+    fig_ts.add_trace(go.Scatter(x=historical_total['Date'], y=historical_total['Sales'], 
+                                name='Historical Sales', line=dict(color='#1E88E5', width=2)))
+    # Forecast Line
+    fig_ts.add_trace(go.Scatter(x=total_forecast['Date'], y=total_forecast['Forecasted_Sales'], 
+                                name='Predicted Sales (Next 30 Days)', line=dict(color='#D32F2F', width=3, dash='dash')))
+    
+    fig_ts.update_layout(template="plotly_white", hovermode="x unified", 
+                         xaxis_title="Timeline", yaxis_title="Sales ($)")
+    st.plotly_chart(fig_ts, use_container_width=True)
+
+    # --- ROW 3: CATEGORICAL FORECASTS ---
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("🛍️ Top Product Sales Forecast")
+        # Sum of predicted sales per product for the 30 day period
+        prod_sums = product_forecast.groupby("Product line")["Forecasted_Sales"].sum().reset_index().sort_values("Forecasted_Sales", ascending=True)
+        fig_p = px.bar(prod_sums, x="Forecasted_Sales", y="Product line", orientation='h',
+                       title="Predicted Total Revenue by Product (Next 30 Days)",
+                       color="Forecasted_Sales", color_continuous_scale="Blues")
+        st.plotly_chart(fig_p, use_container_width=True)
+
+    with col_right:
+        st.subheader("🌆 Revenue by City Forecast")
+        city_sums = city_forecast.groupby("City")["Forecasted_Sales"].sum().reset_index()
+        fig_c = px.pie(city_sums, values="Forecasted_Sales", names="City", hole=0.4,
+                       title="Predicted Revenue Contribution by City",
+                       color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig_c, use_container_width=True)
+
+    # --- DATA TABLE ---
+    with st.expander("📝 View Forecast Data Table"):
+        st.write("Below are the raw predicted values for the next 30 days:")
+        st.dataframe(total_forecast.set_index('Date'))
+
+except FileNotFoundError:
+    st.error("Error: 'SuperMarket Analysis.csv' not found. Please ensure the file is in the same directory.")
 except Exception as e:
-    st.error(f"An error occurred: {e}")
+    st.error(f"An unexpected error occurred: {e}")

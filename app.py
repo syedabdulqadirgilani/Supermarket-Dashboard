@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -121,3 +120,4 @@ try:
 
 except Exception as e:
     st.error(f"Waiting for data... Please ensure 'SuperMarket_Analysis.csv' is uploaded. Error: {e}")
+

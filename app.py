@@ -8,8 +8,8 @@ st.set_page_config(page_title="Supermarket KPI Dashboard", layout="wide")
 # Load Data
 @st.cache_data
 def load_data():
-    # Reading the data (assuming the file is named SuperMarket_Analysis.csv)
-    df = pd.read_csv("SuperMarket_Analysis.csv")
+    # Reading the data (assuming the file is named SuperMarket Analysis.csv)
+    df = pd.read_csv("SuperMarket Analysis.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     return df
 
@@ -104,4 +104,5 @@ try:
 
 except Exception as e:
     st.error(f"Please ensure 'SuperMarket_Analysis.csv' is uploaded to Colab. Error: {e}")
+
 

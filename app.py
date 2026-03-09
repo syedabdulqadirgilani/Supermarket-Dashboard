@@ -29,7 +29,7 @@ st.markdown("""
 def load_data():
     df = pd.read_csv("SuperMarket Analysis.csv")
     df["Date"] = pd.to_datetime(df["Date"])
-    # Converting 'Time' (e.g., 1:08:00 PM) to an actual datetime object for extraction
+    # Parsing Time format (e.g., 1:08:00 PM)
     df["Time_dt"] = pd.to_datetime(df["Time"], format='%I:%M:%S %p', errors='coerce')
     df["Hour"] = df["Time_dt"].dt.hour
     df["Day"] = df["Date"].dt.day_name()
@@ -40,15 +40,20 @@ try:
 
     # 3. SIDEBAR FILTERS
     st.sidebar.title("🔍 Global Filters")
-    city = st.sidebar.multiselect("Select City", options=df["City"].unique(), default=df["City"].unique())
-    ctype = st.sidebar.multiselect("Customer Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
-    branch = st.sidebar.multiselect("Branch", options=df["Branch"].unique(), default=df["Branch"].unique())
-    gender = st.sidebar.multiselect("Gender", options=df["Gender"].unique(), default=df["Gender"].unique())
+    city_list = st.sidebar.multiselect("Select City", options=df["City"].unique(), default=df["City"].unique())
+    ctype_list = st.sidebar.multiselect("Customer Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
+    branch_list = st.sidebar.multiselect("Branch", options=df["Branch"].unique(), default=df["Branch"].unique())
+    gender_list = st.sidebar.multiselect("Gender", options=df["Gender"].unique(), default=df["Gender"].unique())
 
-    # THE FIX: Added backticks around Customer type
-    df_selection = df.query(
-        "City == @city & Customer type == @ctype & Branch == @branch & Gender == @gender"
+    # --- THE FIX: BOOLEAN INDEXING ---
+    # We replace .query() with standard filtering to avoid keyword errors with "type"
+    mask = (
+        df["City"].isin(city_list) & 
+        df["Customer type"].isin(ctype_list) & 
+        df["Branch"].isin(branch_list) & 
+        df["Gender"].isin(gender_list)
     )
+    df_selection = df[mask]
 
     # 4. DASHBOARD TABS
     st.title("🛒 Supermarket Business Intelligence")
@@ -72,12 +77,10 @@ try:
             
             col1, col2 = st.columns(2)
             with col1:
-                # Sales by Product Line
                 product_sales = df_selection.groupby("Product line")[["Sales"]].sum().sort_values("Sales")
                 fig_prod = px.bar(product_sales, x="Sales", y=product_sales.index, orientation='h', title="Top Product Categories", color="Sales", color_continuous_scale="Blues")
                 st.plotly_chart(fig_prod, use_container_width=True)
             with col2:
-                # Revenue by City Pie
                 city_rev = df_selection.groupby("City")[["Sales"]].sum().reset_index()
                 fig_city = px.pie(city_rev, values="Sales", names="City", hole=0.5, title="Revenue by City")
                 st.plotly_chart(fig_city, use_container_width=True)
@@ -85,13 +88,11 @@ try:
         # --- TAB 2: TRENDS & FORECASTING ---
         with tab2:
             st.subheader("Time Series & 30-Day Forecast")
-            
-            # Historical Trend
             daily_sales = df_selection.groupby("Date")["Sales"].sum().reset_index()
             fig_trend = px.line(daily_sales, x="Date", y="Sales", title="Daily Revenue Trend")
             st.plotly_chart(fig_trend, use_container_width=True)
             
-            # Simple Forecast Logic
+            # Forecast Logic
             daily_sales['Date_Ord'] = daily_sales['Date'].map(datetime.datetime.toordinal)
             X = daily_sales[['Date_Ord']]
             y = daily_sales['Sales']
@@ -119,7 +120,9 @@ try:
                 st.plotly_chart(px.pie(tax_by_gen, values="Tax 5%", names="Gender", title="Tax by Gender"), use_container_width=True)
             
             with st.expander("📝 View Detailed Transaction Log"):
-                st.dataframe(df_selection.drop(columns=["Time_dt", "Hour", "Day"]))
+                # Clean up display columns
+                display_df = df_selection.drop(columns=["Time_dt", "Hour", "Day"])
+                st.dataframe(display_df)
 
     else:
         st.warning("Please adjust filters to view data.")

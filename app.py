@@ -4,80 +4,72 @@ from prophet import Prophet
 import plotly.graph_objects as go
 from prophet.plot import plot_plotly, plot_components_plotly
 
-# Page configuration
 st.set_page_config(page_title="Apple Sales Forecasting", layout="wide")
-
 st.title("🍎 Apple Global Product Sales: Time Series Forecasting")
-st.markdown("""
-This app performs time-series forecasting on the synthetic Apple sales dataset. 
-It aggregates daily revenue and predicts future trends using the **Prophet** model.
-""")
 
-# 1. Load Data
 @st.cache_data
 def load_data():
-    # Adjust filename if necessary
-    df = pd.read_csv('SuperMarket Analysis.csv')
-    df['sale_date'] = pd.to_datetime(df['sale_date'])
+    # 1. Load the data
+    df = pd.read_csv('SuperMarket Analaysis.csv')
+    
+    # 2. CLEAN HEADERS: Remove hidden spaces and make everything lowercase
+    df.columns = df.columns.str.strip().str.lower()
+    
+    # 3. CONVERT DATE: Ensure the date column is in datetime format
+    if 'sale_date' in df.columns:
+        df['sale_date'] = pd.to_datetime(df['sale_date'])
+    else:
+        # Fallback: if 'sale_date' is missing, show the user what columns ARE there
+        st.error(f"Could not find 'sale_date'. Available columns are: {list(df.columns)}")
+        st.stop()
+        
     return df
 
 try:
     df = load_data()
     
-    # 2. Sidebar Filters
     st.sidebar.header("Forecast Settings")
-    category_list = ["All"] + list(df['category'].unique())
+    # Clean the category selection as well
+    category_col = 'category' if 'category' in df.columns else df.columns[-1]
+    category_list = ["All"] + list(df[category_col].unique())
     selected_category = st.sidebar.selectbox("Select Product Category", category_list)
     
-    period = st.sidebar.slider("Days to forecast into the future:", 30, 365, 90)
+    period = st.sidebar.slider("Days to forecast:", 30, 365, 90)
 
-    # Filter data based on selection
+    # Filter
     if selected_category != "All":
-        plot_df = df[df['category'] == selected_category]
+        plot_df = df[df[category_col] == selected_category]
     else:
         plot_df = df
 
-    # 3. Data Preprocessing for Prophet
-    # Prophet requires columns 'ds' (date) and 'y' (value)
-    ts_data = plot_df.groupby('sale_date')['revenue_usd'].sum().reset_index()
+    # Prepare for Prophet (Prophet needs 'ds' and 'y')
+    # We aggregate 'revenue_usd' or whatever the revenue column is named
+    revenue_col = 'revenue_usd' if 'revenue_usd' in df.columns else 'revenue'
+    
+    ts_data = plot_df.groupby('sale_date')[revenue_col].sum().reset_index()
     ts_data.columns = ['ds', 'y']
 
-    # 4. Show Historical Data
-    st.subheader(f"Historical Daily Revenue: {selected_category}")
+    st.subheader(f"Historical Trends: {selected_category}")
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Scatter(x=ts_data['ds'], y=ts_data['y'], name="Actual Revenue"))
-    fig_hist.update_layout(xaxis_title="Date", yaxis_title="Revenue (USD)")
     st.plotly_chart(fig_hist, use_container_width=True)
 
-    # 5. Forecasting Logic
     if st.button("Run Forecast"):
-        with st.spinner('Training model...'):
-            model = Prophet(yearly_seasonality=True, daily_seasonality=False)
+        with st.spinner('Calculating...'):
+            model = Prophet(yearly_seasonality=True, interval_width=0.95)
             model.fit(ts_data)
             
-            # Create future dates
             future = model.make_future_dataframe(periods=period)
             forecast = model.predict(future)
             
-            # 6. Display Results
-            st.subheader(f"Forecast for next {period} days")
-            
-            # Interactive Forecast Plot
+            st.subheader("Forecast Results")
             fig_forecast = plot_plotly(model, forecast)
-            fig_forecast.update_layout(xaxis_title="Date", yaxis_title="Revenue (USD)")
             st.plotly_chart(fig_forecast, use_container_width=True)
             
-            # Components (Trend, Weekly, Yearly)
-            st.subheader("Forecast Components")
-            st.markdown("This shows the underlying trend and seasonal patterns (e.g., holiday peaks).")
+            st.subheader("Seasonal Patterns (Yearly/Weekly)")
             fig_comp = plot_components_plotly(model, forecast)
             st.plotly_chart(fig_comp, use_container_width=True)
-            
-            # Show Raw Forecast Table
-            st.subheader("Forecasted Data (Preview)")
-            st.write(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(10))
 
-except FileNotFoundError:
-    st.error("CSV file not found. Please ensure 'apple_global_sales_dataset.csv' is in the project folder.")
 except Exception as e:
-    st.error(f"An error occurred: {e}")
+    st.error(f"Critical Error: {e}")
+    st.info("Check if your CSV file name is exactly 'apple_global_sales_dataset.csv'")

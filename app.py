@@ -10,7 +10,7 @@ st.title("🍎 Apple Global Product Sales: Time Series Forecasting")
 @st.cache_data
 def load_data():
     # 1. Load the data
-    df = pd.read_csv('SuperMarket Analaysis.csv')
+    df = pd.read_csv('SuperMarket Analysis.csv')
     
     # 2. CLEAN HEADERS: Remove hidden spaces and make everything lowercase
     df.columns = df.columns.str.strip().str.lower()

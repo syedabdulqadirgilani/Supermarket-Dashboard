@@ -2,118 +2,135 @@ import streamlit as st
 import pandas as pd
 from prophet import Prophet
 import plotly.graph_objects as go
+import plotly.express as px
 from prophet.plot import plot_plotly, plot_components_plotly
+from datetime import datetime
 
-# Page configuration
-st.set_page_config(page_title="Sales Forecasting Dashboard", layout="wide")
+# --- PAGE CONFIGURATION (Dashboard ka look professional banane ke liye) ---
+st.set_page_config(page_title="Apple Sales BI Dashboard", layout="wide", page_icon="🍎")
 
-st.title("📊 Sales Time Series Forecasting")
+# Custom CSS for a "Premium BI" feel
 st.markdown("""
-This application uses the **Prophet** model to analyze historical sales data and predict future revenue trends.
-""")
+    <style>
+    .main { background-color: #f5f5f7; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    h1, h2, h3 { color: #1d1d1f; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 1. Robust Data Loading Function
+# --- HEADER SECTION ---
+st.title("🍎 Apple Global Sales: BI Forecasting Dashboard")
+st.markdown("Professional-grade time series analysis using the **Prophet** engine to predict 2025-2026 trends.")
+
+# --- 1. DATA LOADING ENGINE (Auto-detecting separators and columns) ---
 @st.cache_data
 def load_data():
-    # Ensure this filename matches the one in your GitHub repository
-    file_path = 'SuperMarket Analysis.csv' 
-    
+    file_path = 'SuperMarket Analysis.csv' # Ensure this file is in your GitHub
     try:
-        # sep=None and engine='python' allows pandas to auto-detect if the file uses Commas or Tabs (\t)
+        # sep=None detects if file is Tab (\t) or Comma (,) separated automatically
         df = pd.read_csv(file_path, sep=None, engine='python')
+        
+        # Headers clean up (Lowercase and strip spaces)
+        df.columns = df.columns.str.strip().str.lower()
+        
+        # Column Mapping (Finding Date and Revenue columns)
+        date_col = next((c for c in ['sale_date', 'date', 'transaction_date'] if c in df.columns), None)
+        rev_col = next((c for c in ['revenue_usd', 'total', 'revenue', 'gross income'] if c in df.columns), None)
+        cat_col = next((c for c in ['category', 'product line', 'product_name'] if c in df.columns), None)
+
+        if not date_col or not rev_col:
+            st.error(f"Required columns not found! Columns found: {list(df.columns)}")
+            st.stop()
+
+        df[date_col] = pd.to_datetime(df[date_col])
+        return df, date_col, rev_col, cat_col
     except Exception as e:
-        st.error(f"Error reading file: {e}")
-        st.stop()
-    
-    # Clean headers: remove spaces and convert to lowercase for easier matching
-    df.columns = df.columns.str.strip().str.lower()
-    
-    # --- AUTO-DETECT DATE COLUMN ---
-    date_col = None
-    for col in ['sale_date', 'date', 'transaction_date', 'timestamp']:
-        if col in df.columns:
-            date_col = col
-            break
-            
-    # --- AUTO-DETECT REVENUE/VALUE COLUMN ---
-    rev_col = None
-    for col in ['revenue_usd', 'total', 'revenue', 'gross income', 'sales']:
-        if col in df.columns:
-            rev_col = col
-            break
-
-    # If detection fails, show exactly what was found so you can troubleshoot
-    if not date_col or not rev_col:
-        st.error("Column Detection Failed!")
-        st.write("Found these columns in your file:", list(df.columns))
-        st.info("The app expects a Date column and a Revenue/Total column.")
+        st.error(f"File Load Error: {e}")
         st.stop()
 
-    # Convert the date column to actual datetime objects
-    df[date_col] = pd.to_datetime(df[date_col])
-    
-    return df, date_col, rev_col
+df, date_col, rev_col, cat_col = load_data()
 
-try:
-    df, date_col, rev_col = load_data()
-    
-    # 2. Sidebar Filters
-    st.sidebar.header("Forecast Configuration")
-    
-    # Find a category column (looks for 'category', 'product line', or uses the last string column)
-    cat_col = 'category' if 'category' in df.columns else ('product line' if 'product line' in df.columns else None)
-    
-    if cat_col:
-        category_list = ["All Categories"] + sorted(list(df[cat_col].unique()))
-        selected_category = st.sidebar.selectbox("Filter by Category", category_list)
-    else:
-        selected_category = "All Categories"
+# --- 2. SIDEBAR - CONTROL PANEL ---
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg", width=50)
+st.sidebar.header("🕹️ Control Panel")
 
-    period = st.sidebar.slider("Days to forecast into the future:", 30, 365, 90)
+# Category Filter
+categories = ["Global (All)"] + sorted(df[cat_col].unique().tolist())
+selected_cat = st.sidebar.selectbox("Select Product Category", categories)
 
-    # 3. Filter and Aggregate Data
-    if selected_category != "All Categories":
-        filtered_df = df[df[cat_col] == selected_category]
-    else:
-        filtered_df = df
+# Forecasting period (Set to 1095 to cover 2026 and 2027)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Forecast Horizon")
+period = st.sidebar.slider("Days to predict (730 = Year 2026):", 30, 1095, 730)
 
-    # Prophet requires a specific format: 'ds' for date and 'y' for values
-    ts_data = filtered_df.groupby(date_col)[rev_col].sum().reset_index()
-    ts_data.columns = ['ds', 'y']
+# Filter Logic
+if selected_cat == "Global (All)":
+    plot_df = df
+else:
+    plot_df = df[df[cat_col] == selected_cat]
 
-    # 4. Display Historical Chart
-    st.subheader(f"Historical Revenue: {selected_category}")
-    fig_hist = go.Figure()
-    fig_hist.add_trace(go.Scatter(x=ts_data['ds'], y=ts_data['y'], name="Actual Revenue", line=dict(color='#1f77b4')))
-    fig_hist.update_layout(xaxis_title="Date", yaxis_title="Revenue (USD)")
-    st.plotly_chart(fig_hist, use_container_width=True)
+# --- 3. BI METRICS (TOP ROW KPIs) ---
+total_rev = plot_df[rev_col].sum()
+avg_sale = plot_df[rev_col].mean()
+unique_products = plot_df[cat_col].nunique()
 
-    # 5. Forecasting Logic
-    if st.button("🚀 Run Forecast"):
-        with st.spinner('Training forecasting model...'):
-            # Initialize and fit the Prophet model
-            model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
-            model.fit(ts_data)
-            
-            # Create a future dataframe for the number of days selected
-            future = model.make_future_dataframe(periods=period)
-            forecast = model.predict(future)
-            
-            # 6. Display Forecast Results
-            st.subheader(f"Forecast for the next {period} days")
-            fig_forecast = plot_plotly(model, forecast)
-            fig_forecast.update_layout(xaxis_title="Date", yaxis_title="Revenue (USD)")
-            st.plotly_chart(fig_forecast, use_container_width=True)
-            
-            # 7. Seasonal Breakdown (Trends, Weekly, Yearly)
-            st.subheader("Seasonal Patterns & Trends")
-            st.markdown("This section breaks down when your sales peak (e.g., weekends vs weekdays, or certain months).")
-            fig_comp = plot_components_plotly(model, forecast)
-            st.plotly_chart(fig_comp, use_container_width=True)
-            
-            # Preview the last few days of the forecast
-            st.subheader("Forecast Data Preview")
-            st.write(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail(10))
+m1, m2, m3 = st.columns(3)
+m1.metric("Total Historical Revenue", f"${total_rev:,.0f}")
+m2.metric("Average Transaction Value", f"${avg_sale:,.2f}")
+m3.metric("Product Categories", unique_products)
 
-except Exception as e:
-    st.error(f"An unexpected error occurred: {e}")
+# --- 4. HISTORICAL TREND VISUALIZATION ---
+st.subheader(f"📈 Historical Sales Performance: {selected_cat}")
+# Daily aggregation for smooth plotting
+daily_sales = plot_df.groupby(date_col)[rev_col].sum().reset_index()
+
+fig_hist = px.line(daily_sales, x=date_col, y=rev_col, 
+              title="Daily Revenue Trend (2022 - 2024)",
+              color_discrete_sequence=['#0071e3'], # Apple Blue
+              template="plotly_white")
+fig_hist.update_layout(hovermode="x unified")
+st.plotly_chart(fig_hist, use_container_width=True)
+
+# --- 5. THE FORECASTING ENGINE (Prophet) ---
+st.markdown("---")
+st.header("🔮 Future Forecast (2025 - 2026)")
+
+# Prophet requires 'ds' (date) and 'y' (value)
+prophet_df = daily_sales.rename(columns={date_col: 'ds', rev_col: 'y'})
+
+if st.button("🚀 Generate 2026 Forecast"):
+    with st.spinner('Analyzing historical patterns and seasonality...'):
+        # Model training
+        model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
+        model.fit(prophet_df)
+        
+        # Future dataframe creation
+        future = model.make_future_dataframe(periods=period)
+        forecast = model.predict(future)
+        
+        # PLOT 1: Interactive Forecast
+        st.subheader(f"Projected Revenue Growth for {selected_cat}")
+        fig_f = plot_plotly(model, forecast)
+        fig_f.update_layout(template="plotly_white", title_font_size=20)
+        st.plotly_chart(fig_f, use_container_width=True)
+        
+        # PLOT 2: Seasonal Components (Trends)
+        st.subheader("🗓️ Seasonal Intelligence")
+        st.info("The charts below show the underlying Trend (Growth), Weekly peaks, and Yearly seasonality (Holidays).")
+        fig_comp = plot_components_plotly(model, forecast)
+        st.plotly_chart(fig_comp, use_container_width=True)
+        
+        # DATA TABLE: 2026 Specifics
+        st.subheader("📅 2026 Data Preview")
+        forecast_2026 = forecast[forecast['ds'] >= '2026-01-01']
+        
+        col_a, col_b = st.columns([1, 2])
+        with col_a:
+            avg_2026 = forecast_2026['yhat'].mean()
+            st.metric("Predicted Avg Daily Revenue (2026)", f"${avg_2026:,.2f}")
+        with col_b:
+            st.dataframe(forecast_2026[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].head(10), use_container_width=True)
+
+# --- FOOTER ---
+st.markdown("---")
+st.caption("Dashboard generated by Apple Sales Intelligence | Data: SuperMarket Analysis.csv")

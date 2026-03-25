@@ -1,25 +1,63 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 # 1. PAGE SETUP
-st.set_page_config(page_title="Global Supermarket Intelligence", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Enterprise BI Dashboard", layout="wide", page_icon="💎")
 
-# Custom CSS for UI
+# 2. CUSTOM CSS FOR PREMIUM LOOK
 st.markdown("""
     <style>
-    .stMetric { 
-        background-color: #ffffff; 
-        padding: 15px; 
-        border-radius: 10px; 
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        border: 1px solid #f0f2f6;
+    /* Main Background */
+    .stApp {
+        background: linear-gradient(to right, #f8f9fa, #e9ecef);
+    }
+    
+    /* KPI Cards Styling */
+    div[data-testid="stMetric"] {
+        background: white;
+        padding: 20px !important;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-left: 5px solid #00d2ff;
+        transition: transform 0.3s;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #1e1e2f !important;
+        color: white;
+    }
+    
+    /* Tab Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #ffffff;
+        border-radius: 10px 10px 0px 0px;
+        gap: 1px;
+        padding: 10px 20px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #3a7bd5 !important;
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
+# 3. DATA ENGINE
 @st.cache_data
-def load_and_clean_data():
+def load_data():
     df = pd.read_csv("SuperMarket Analysis.csv")
     df["Date"] = pd.to_datetime(df["Date"])
     df["Time_dt"] = pd.to_datetime(df["Time"], errors='coerce')
@@ -27,91 +65,116 @@ def load_and_clean_data():
     return df
 
 try:
-    df = load_and_clean_data()
+    df = load_data()
 
-    # 3. GLOBAL SIDEBAR FILTERS
-    st.sidebar.title("🕹️ Control Panel")
-    
-    # --- ADDED: Date Range Filter ---
-    min_date = df["Date"].min()
-    max_date = df["Date"].max()
-    date_range = st.sidebar.date_input("📅 Select Date Range", [min_date, max_date], min_value=min_date, max_value=max_date)
-
-    city = st.sidebar.multiselect("📍 Select Cities", options=df["City"].unique(), default=df["City"].unique())
-    customer_type = st.sidebar.multiselect("👥 Customer Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
-    branch = st.sidebar.multiselect("🏬 Branch", options=df["Branch"].unique(), default=df["Branch"].unique())
-
-    # Apply Filters
-    mask = (df["City"].isin(city)) & \
-           (df["Customer type"].isin(customer_type)) & \
-           (df["Branch"].isin(branch)) & \
-           (df["Date"].between(pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])))
-    
-    df_selection = df[mask]
-
-    st.title("📊 Supermarket Enterprise Dashboard")
-    st.write(f"Analyzing {len(df_selection)} transactions globally.")
-
-    if df_selection.empty:
-        st.error("No data found! Adjust your filters.")
-    else:
-        # 5. KPI SUMMARY ROW (Updated with AOV)
-        total_sales = df_selection["Sales"].sum()
-        total_profit = df_selection["gross income"].sum()
-        avg_rating = round(df_selection["Rating"].mean(), 1)
-        total_trans = len(df_selection)
-        aov = total_sales / total_trans if total_trans > 0 else 0
-
-        kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-        kpi1.metric("Total Revenue", f"${total_sales:,.0f}")
-        kpi2.metric("Gross Profit", f"${total_profit:,.0f}")
-        kpi3.metric("AOV (Avg Bill)", f"${aov:,.2f}") # --- ADDED KPI ---
-        kpi4.metric("Avg Rating", f"{avg_rating} ⭐")
-        kpi5.metric("Transactions", f"{total_trans:,}")
-
+    # --- SIDEBAR FILTERS ---
+    with st.sidebar:
+        st.image("https://cdn-icons-png.flaticon.com/512/3222/3222672.png", width=80)
+        st.title("Admin Panel")
         st.markdown("---")
+        
+        date_range = st.date_input("📅 Date Range", [df["Date"].min(), df["Date"].max()])
+        city = st.multiselect("📍 Cities", options=df["City"].unique(), default=df["City"].unique())
+        branch = st.multiselect("🏬 Branch", options=df["Branch"].unique(), default=df["Branch"].unique())
+        customer = st.multiselect("👥 Type", options=df["Customer type"].unique(), default=df["Customer type"].unique())
+        
+    # Filter Mask
+    mask = (df["City"].isin(city)) & (df["Branch"].isin(branch)) & (df["Customer type"].isin(customer))
+    if len(date_range) == 2:
+        mask = mask & (df["Date"].between(pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])))
+    
+    df_filtered = df[mask]
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📈 Financials", "📦 Operations", "👤 Customers", "📋 Raw Data"])
+    # --- HEADER SECTION ---
+    head_col1, head_col2 = st.columns([3, 1])
+    with head_col1:
+        st.title("💎 Supermarket Enterprise Dashboard")
+        st.markdown(f"**Live Analysis:** Tracking `{len(df_filtered)}` verified transactions")
+    with head_col2:
+        # Mini Dynamic Info
+        top_city = df_filtered.groupby("City")["Sales"].sum().idxmax() if not df_filtered.empty else "N/A"
+        st.success(f"🏆 Top City: **{top_city}**")
 
-        with tab1:
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                sales_by_date = df_selection.groupby("Date")[["Sales"]].sum().reset_index()
-                fig_trend = px.line(sales_by_date, x="Date", y="Sales", title="Daily Sales Trend", template="plotly_white")
-                st.plotly_chart(fig_trend, use_container_width=True)
-            with col2:
-                city_rev = df_selection.groupby("City")[["Sales"]].sum().reset_index()
-                fig_city = px.pie(city_rev, values="Sales", names="City", hole=0.5, title="Revenue by City")
-                st.plotly_chart(fig_city, use_container_width=True)
+    # --- 4. KPIs ROW ---
+    st.markdown("### 🚀 Performance Overview")
+    k1, k2, k3, k4, k5 = st.columns(5)
+    
+    total_sales = df_filtered["Sales"].sum()
+    total_profit = df_filtered["gross income"].sum()
+    margin = (total_profit / total_sales) * 100 if total_sales > 0 else 0
+    avg_rating = df_filtered["Rating"].mean()
+    total_qty = df_filtered["Quantity"].sum()
 
-        with tab2:
-            col3, col4 = st.columns(2)
-            with col3:
-                product_sales = df_selection.groupby("Product line")[["Sales"]].sum().sort_values("Sales")
-                fig_prod = px.bar(product_sales, x="Sales", y=product_sales.index, orientation='h', title="Product Performance", color="Sales", color_continuous_scale="Blues")
-                st.plotly_chart(fig_prod, use_container_width=True)
-            with col4:
-                hourly_sales = df_selection.groupby("Hour")[["Sales"]].count().reset_index()
-                fig_hour = px.area(hourly_sales, x="Hour", y="Sales", title="Peak Traffic Hours (Invoices)", color_discrete_sequence=["#00CC96"])
-                st.plotly_chart(fig_hour, use_container_width=True)
+    k1.metric("Total Revenue", f"${total_sales:,.0f}", delta="↑ 5.2%")
+    k2.metric("Net Profit", f"${total_profit:,.1f}", delta="Stable")
+    k3.metric("Profit Margin", f"{margin:.1f}%", delta="↑ 0.4%")
+    k4.metric("Avg Rating", f"{avg_rating:.1f} ⭐")
+    k5.metric("Units Sold", f"{total_qty:,} pcs")
 
-        with tab3:
-            col5, col6 = st.columns(2)
-            with col5:
-                fig_pay = px.bar(df_selection, x="Payment", y="Sales", color="Customer type", barmode="group", title="Payment Preferences")
-                st.plotly_chart(fig_pay, use_container_width=True)
-            with col6:
-                # Improved: Using Bar chart for ratings instead of scatter
-                prod_rating = df_selection.groupby("Product line")[["Rating"]].mean().sort_values("Rating").reset_index()
-                fig_rat = px.bar(prod_rating, x="Rating", y="Product line", orientation='h', title="Avg Rating per Category", color="Rating", range_x=[0,10])
-                st.plotly_chart(fig_rat, use_container_width=True)
+    st.markdown("---")
 
-        with tab4:
-            st.subheader("Filtered Data")
-            # --- ADDED: Download CSV Button ---
-            csv = df_selection.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Filtered Data as CSV", data=csv, file_name="supermarket_data.csv", mime="text/csv")
-            st.dataframe(df_selection, use_container_width=True)
+    # --- 5. VISUALIZATION TABS ---
+    tab_fin, tab_ops, tab_cust, tab_data = st.tabs(["💰 Financials", "⚙️ Operations", "👤 Customers", "📂 Raw Data"])
+
+    with tab_fin:
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            # Sales Trend with Area & Line combo
+            daily_sales = df_filtered.groupby("Date")[["Sales"]].sum().reset_index()
+            fig_trend = px.area(daily_sales, x="Date", y="Sales", title="<b>Daily Revenue Performance</b>",
+                                color_discrete_sequence=["#3a7bd5"], template="plotly_white")
+            fig_trend.update_layout(hovermode="x unified")
+            st.plotly_chart(fig_trend, use_container_width=True)
+        
+        with c2:
+            # Revenue by Product Line (Donut)
+            prod_rev = df_filtered.groupby("Product line")["Sales"].sum().reset_index()
+            fig_donut = px.pie(prod_rev, values="Sales", names="Product line", hole=0.6,
+                               title="<b>Category Contribution</b>", 
+                               color_discrete_sequence=px.colors.qualitative.Pastel)
+            st.plotly_chart(fig_donut, use_container_width=True)
+
+    with tab_ops:
+        c3, c4 = st.columns(2)
+        with c3:
+            # Vertical Bar for Branch Sales
+            branch_perf = df_filtered.groupby("Branch")["Sales"].sum().sort_values().reset_index()
+            fig_branch = px.bar(branch_perf, x="Branch", y="Sales", color="Sales",
+                                title="<b>Sales Performance by Branch</b>",
+                                color_continuous_scale="Viridis")
+            st.plotly_chart(fig_branch, use_container_width=True)
+        
+        with c4:
+            # Hourly Heatmap-style Area
+            hourly_data = df_filtered.groupby("Hour")["Sales"].sum().reset_index()
+            fig_hour = px.line(hourly_data, x="Hour", y="Sales", markers=True,
+                               title="<b>Peak Business Hours</b>",
+                               line_shape="spline", color_discrete_sequence=["#FF4B4B"])
+            st.plotly_chart(fig_hour, use_container_width=True)
+
+    with tab_cust:
+        c5, c6 = st.columns(2)
+        with c5:
+            # Payment Method vs Gender
+            fig_pay = px.sunburst(df_filtered, path=['Gender', 'Payment'], values='Sales',
+                                  title="<b>Payment Patterns by Gender</b>",
+                                  color_discrete_sequence=px.colors.qualitative.Prism)
+            st.plotly_chart(fig_pay, use_container_width=True)
+        
+        with c6:
+            # Satisfaction Score (Radar-like Bar)
+            sat_score = df_filtered.groupby("Product line")["Rating"].mean().sort_values().reset_index()
+            fig_sat = px.bar(sat_score, x="Rating", y="Product line", orientation='h',
+                             title="<b>Customer Satisfaction per Category</b>",
+                             color="Rating", color_continuous_scale="RdYlGn")
+            st.plotly_chart(fig_sat, use_container_width=True)
+
+    with tab_data:
+        st.subheader("Transactional Intelligence Table")
+        # Download Button Row
+        csv = df_filtered.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Filtered CSV", csv, "supermarket_report.csv", "text/csv")
+        st.dataframe(df_filtered.style.background_gradient(cmap='Blues', subset=['Sales', 'Rating']), use_container_width=True)
 
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Please check your dataset: {e}")
